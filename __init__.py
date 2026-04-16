@@ -1,4 +1,4 @@
-from .qwen_remote import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+from .VisionLLMCaptioner.py import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 
 WEB_DIRECTORY = "./js"
 
