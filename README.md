@@ -1,4 +1,4 @@
-# Gemma-4 Vision Captioner + Prompt Enhancer for ComfyUI
+# VisionLLMCaptioner - README
 
 A powerful ComfyUI node that leverages **Gemma-4** vision capabilities for image captioning and prompt enhancement. Supports both **Remote API (llama-server)** and **Local Standalone (llama-cpp-python)** modes.
 
@@ -109,7 +109,7 @@ If this runs without errors, your installation is successful.
 
 2. Clone or copy this repository:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/gemma4-vision-captioner.git
+   git clone https://github.com/YOUR_USERNAME/VisionLLMCaptioner.git
    ```
 
 3. Restart ComfyUI.
@@ -118,7 +118,7 @@ If this runs without errors, your installation is successful.
 
 1. Open ComfyUI Manager
 2. Click "Install Custom Nodes"
-3. Search for "Gemma-4 Vision Captioner"
+3. Search for "VisionLLMCaptioner"
 4. Click Install
 5. Restart ComfyUI
 
@@ -128,7 +128,7 @@ If this runs without errors, your installation is successful.
 
 ### Basic Image Captioning
 
-1. Add the **Gemma-4 Vision Captioner** node to your workflow
+1. Add the **VisionLLMCaptioner** node to your workflow
 2. Connect an image to the `image_1` input
 3. Set **Backend** to `Local Standalone (llama-cpp-python)` or `Remote API (llama-server)`
 4. Configure model paths (for local mode) or server URL (for remote mode)
@@ -224,7 +224,7 @@ pip install --no-cache-dir git+https://github.com/Randy420Marsh/llama-cpp-python
 ### Workflow 1: Detailed Image Captioning
 
 ```
-[Load Image] → [Gemma-4 Vision Captioner] → [Save Text File]
+[Load Image] → [VisionLLMCaptioner] → [Save Text File]
                                       ↓
                               [Show Text]
 ```
@@ -237,7 +237,7 @@ pip install --no-cache-dir git+https://github.com/Randy420Marsh/llama-cpp-python
 ### Workflow 2: Prompt Enhancement
 
 ```
-[Text Input: "fantasy castle"] → [Gemma-4 Vision Captioner] → [CLIP Text Encode] → [KSampler]
+[Text Input: "fantasy castle"] → [VisionLLMCaptioner] → [CLIP Text Encode] → [KSampler]
 ```
 
 **Settings**:
@@ -249,7 +249,7 @@ pip install --no-cache-dir git+https://github.com/Randy420Marsh/llama-cpp-python
 
 ```
 [Load Image A] ─┐
-                ├→ [Gemma-4 Vision Captioner] → [Text Output]
+                ├→ [VisionLLMCaptioner] → [Text Output]
 [Load Image B] ─┘
 ```
 

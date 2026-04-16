@@ -1,5 +1,5 @@
 """
-Gemma-4 Vision Captioner + Prompt Enhancer for ComfyUI
+VisionLLMCaptioner - Gemma-4 Vision Captioner + Prompt Enhancer for ComfyUI
 OPTIMIZED FOR Randy420Marsh/llama-cpp-python fork (Gemma4ChatHandler + vision)
 """
 
@@ -328,5 +328,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "VisionLLMCaptioner": "Gemma-4 Vision Captioner + Prompt Enhancer (Remote API or Local Standalone)"
+    "VisionLLMCaptioner": "VisionLLMCaptioner - Gemma-4 Vision + Prompt Enhancer"
 }
