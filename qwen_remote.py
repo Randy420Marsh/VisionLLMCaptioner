@@ -13,7 +13,14 @@ from datetime import datetime
 import torch
 from PIL import Image
 
-import folder_paths
+# ComfyUI-specific imports - handle gracefully for import scanning
+try:
+    import folder_paths
+    COMFYUI_AVAILABLE = True
+except ImportError:
+    folder_paths = None
+    COMFYUI_AVAILABLE = False
+    print("[VisionLLMCaptioner] Warning: folder_paths not available (not running in ComfyUI context)")
 
 # Your custom fork
 try:
@@ -159,6 +166,9 @@ class VisionLLMCaptioner:
 
     def _save_caption(self, caption: str) -> str:
         """Save caption to output directory."""
+        if not COMFYUI_AVAILABLE or folder_paths is None:
+            print("[VisionLLMCaptioner] Cannot save file: ComfyUI folder_paths not available")
+            return ""
         output_dir = os.path.join(folder_paths.get_output_directory(), "captions")
         os.makedirs(output_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
