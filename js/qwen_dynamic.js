@@ -1,15 +1,15 @@
 /**
- * qwen_dynamic.js
+ * vision_llm_dynamic.js
  *
- * Dynamically manages image_N input slots on VisionLLMCaptioner (and old Qwen35RemoteCaptioner for compatibility).
- * Now mode-aware: in "Text -> Detailed Image Prompt" mode all extra image slots are hidden.
+ * Dynamically manages image_N input slots on VisionLLMCaptioner.
+ * Mode-aware: in "Text -> Detailed Image Prompt" mode all extra image slots are hidden.
  */
 
 import { app } from "../../scripts/app.js";
 
-console.log("[Vision Captioner] JS extension loading…");
+console.log("[Gemma-4 Vision Captioner] JS extension loading…");
 
-const TARGETS = ["VisionLLMCaptioner", "Qwen35RemoteCaptioner"];
+const TARGETS = ["VisionLLMCaptioner", "Qwen35RemoteCaptioner"]; // keep old name for compatibility
 
 /** Extract N from "image_N", or -1. */
 function imgNum(name) {
@@ -20,7 +20,7 @@ function imgNum(name) {
 /**
  * Main sync function – respects current Mode widget.
  * In Text mode → only image_1 exists.
- * In Image Caption mode → normal dynamic slots (image_1 + one empty after last connected).
+ * In Image Caption mode → normal dynamic slots.
  */
 function syncSlots(node) {
     const modeWidget = node.widgets ? node.widgets.find(w => w.name === "mode") : null;
@@ -37,16 +37,15 @@ function syncSlots(node) {
     }
 
     if (isTextMode) {
-        // Text mode: keep ONLY image_1, remove everything else
+        // Text mode: keep ONLY image_1
         for (let n = 2; n <= Math.max(...existing, 2); n++) {
             const idx = node.inputs.findIndex(i => i.name === `image_${n}`);
             if (idx !== -1) node.removeInput(idx);
         }
     } else {
-        // Image Caption mode: normal dynamic behaviour
+        // Image Caption mode: dynamic slots
         const target = Math.max(1, maxConnected + 1);
 
-        // Add missing slots up to target
         for (let n = 1; n <= target; n++) {
             if (!existing.has(n)) {
                 node.addInput(`image_${n}`, "IMAGE");
@@ -54,7 +53,6 @@ function syncSlots(node) {
             }
         }
 
-        // Remove any trailing unconnected slots above target
         const excess = [...existing].filter(n => n > target);
         excess.sort((a, b) => b - a);
         for (const n of excess) {
@@ -66,10 +64,10 @@ function syncSlots(node) {
     app.graph?.setDirtyCanvas(true, true);
 }
 
-/** Manual: Add one extra slot (only works in Image Caption mode) */
+/** Manual: Add one extra slot (only in Image Caption mode) */
 function addSlot(node) {
     const modeWidget = node.widgets ? node.widgets.find(w => w.name === "mode") : null;
-    if (modeWidget && String(modeWidget.value).includes("Text")) return; // block in text mode
+    if (modeWidget && String(modeWidget.value).includes("Text")) return;
 
     let max = 0;
     for (const inp of node.inputs) {
@@ -80,7 +78,7 @@ function addSlot(node) {
     app.graph?.setDirtyCanvas(true, true);
 }
 
-/** Manual: Remove the highest unconnected slot (never removes image_1) */
+/** Manual: Remove the highest unconnected slot */
 function removeSlot(node) {
     const slots = node.inputs
         .filter(i => imgNum(i.name) > 1 && i.link == null)
@@ -97,18 +95,14 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (!TARGETS.includes(nodeData.name)) return;
 
-        console.log(`[Vision Captioner] Patching ${nodeData.name}`);
+        console.log(`[Gemma-4 Vision Captioner] Patching ${nodeData.name}`);
 
-        // Hook for automatic slot management when connections change
         const _origCC = nodeType.prototype.onConnectionChange;
         nodeType.prototype.onConnectionChange = function (side) {
             _origCC?.call(this, side);
-            if (side === 1) {   // 1 = input changed
-                syncSlots(this);
-            }
+            if (side === 1) syncSlots(this);
         };
 
-        // Restore correct slots after loading a workflow
         const _origCfg = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function (data) {
             _origCfg?.call(this, data);
@@ -119,12 +113,10 @@ app.registerExtension({
     nodeCreated(node) {
         if (!TARGETS.includes(node.comfyClass)) return;
 
-        console.log("[Vision Captioner] Node created, adding controls");
+        console.log("[Gemma-4 Vision Captioner] Node created, adding controls");
 
-        // Initial sync
         syncSlots(node);
 
-        // Make mode widget trigger slot sync when changed
         const modeWidget = node.widgets.find(w => w.name === "mode");
         if (modeWidget) {
             const originalCallback = modeWidget.callback;
@@ -134,23 +126,9 @@ app.registerExtension({
             };
         }
 
-        // Manual + / - buttons
-        node.addWidget(
-            "button",
-            "＋  Add Image Slot",
-            null,
-            () => addSlot(node),
-            { serialize: false }
-        );
-
-        node.addWidget(
-            "button",
-            "－  Remove Last Slot",
-            null,
-            () => removeSlot(node),
-            { serialize: false }
-        );
+        node.addWidget("button", "＋  Add Image Slot", null, () => addSlot(node), { serialize: false });
+        node.addWidget("button", "－  Remove Last Slot", null, () => removeSlot(node), { serialize: false });
     },
 });
 
-console.log("[Vision Captioner] Extension registered ✓");
+console.log("[Gemma-4 Vision Captioner] Extension registered ✓");
