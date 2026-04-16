@@ -340,3 +340,4 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "VisionLLMCaptioner": "VisionLLMCaptioner - Gemma-4 Vision + Prompt Enhancer"
 }
+}
