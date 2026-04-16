@@ -54,7 +54,7 @@ def _make_client(server_url: str) -> OpenAI:
 
 # STRICT system prompt
 DEFAULT_IMAGE_SYSTEM = (
-    "You are a world-class visual analyst and master prompt engineer specializing in photorealistic, cinematic image generation. You have been given {image_count} image(s) labeled {image_labels}. Always reference images strictly by their exact label in your internal thinking ONLY."
+    "You are a world-class visual analyst and master prompt engineer specializing in photorealistic, cinematic image generation. You have been given {image_count} image(s) labeled {image_labels}. [...]"
 )
 
 DEFAULT_TEXT_SYSTEM = DEFAULT_IMAGE_SYSTEM
@@ -314,7 +314,6 @@ class VisionLLMCaptioner:
                 repeat_penalty=repeat_penalty,
                 presence_penalty=presence_penalty,
                 seed=seed if seed != 0 else None,
-                reasoning_budget=reasoning_budget,
             )
 
         # Normalize response
@@ -341,9 +340,9 @@ class VisionLLMCaptioner:
         return (caption, debug_str, saved_file_path)
 
 
-# ── Registration ──────────────────────────────────────────────────────────────
+# ── Registration ─────────────────────────────────────────────────────────░
 
 NODE_CLASS_MAPPINGS = {"VisionLLMCaptioner": VisionLLMCaptioner}
-NODE_DISPLAY_NAME_MAPPINGS = {
+NODE_CLASS_MAPPINGS = {
     "VisionLLMCaptioner": "Gemma-4 Vision Captioner + Prompt Enhancer (Remote API or Local Standalone)"
 }
