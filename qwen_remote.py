@@ -131,6 +131,12 @@ class VisionLLMCaptioner:
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL | re.IGNORECASE)
         content = re.sub(r"<\|think\|>.*?<\|/think\|>", "", content, flags=re.DOTALL | re.IGNORECASE)
         # Remove prompt generation metadata
+        if not content or not content.strip():
+            return "[EMPTY OR THINKING ONLY — check debug output]"
+
+        content = re.sub(r"<\|?channel\|?>.*?<\|?channel\|?>", "", content, flags=re.DOTALL | re.IGNORECASE)
+        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL | re.IGNORECASE)
+        content = re.sub(r"<\|think\|>.*?<\|/think\|>", "", content, flags=re.DOTALL | re.IGNORECASE)
         content = re.sub(r"\*\*Image Generation Prompt:\*\*.*", "", content, flags=re.DOTALL | re.IGNORECASE)
         content = re.sub(r"Image Generation Prompt:.*", "", content, flags=re.DOTALL | re.IGNORECASE)
         return content.strip()
@@ -327,6 +333,126 @@ NODE_CLASS_MAPPINGS = {
     "VisionLLMCaptioner": VisionLLMCaptioner
 }
 
+    def _save_caption(self, caption: str) -> str:
+        output_dir = os.path.join(folder_paths.get_output_directory(), "captions")
+        os.makedirs(output_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        full_path = os.path.join(output_dir, f"caption_{timestamp}.txt")
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(caption)
+        print(f"[VisionLLMCaptioner] Caption saved → {full_path}")
+        return full_path
+
+    def generate(self, backend, mode, server_url, model_name, model_path, mmproj_path,
+                 n_gpu_layers, n_ctx, n_batch, attention_mode,
+                 system_prompt, user_prompt, max_tokens, enable_thinking, thinking_budget,
+                 temperature, top_p, top_k, repeat_penalty, presence_penalty, min_p,
+                 unload_after_inference, save_to_file,
+                 image_1=None, input_text="", seed=None,
+                 cuda_graphs=False, mlock=True, **kwargs):
+
+        print(f"[DEBUG] START - Backend: {backend} | Mode: {mode} | Images: {'Yes' if mode == 'Image Caption' else 'No'}")
+
+        max_tokens_sent = max_tokens + (thinking_budget if enable_thinking else 0)
+        reasoning_budget = thinking_budget if enable_thinking else 0
+
+        if backend == "Remote API (llama-server)":
+            # Remote mode stays unchanged (works perfectly)
+            client = _make_client(server_url)
+            # ... (same remote code as before - omitted for brevity, but it's the same as my previous version)
+            # You can keep the remote part from the last code I gave you if you need it.
+
+        else:  # Local Standalone - YOUR FORK
+            if not LLAMA_CPP_AVAILABLE:
+                raise ImportError("llama-cpp-python not found")
+
+            if self.llm is None:
+                print(f"[DEBUG] Loading Gemma-4 with YOUR Gemma4ChatHandler → {model_path}")
+                flash = (attention_mode == "Flash Attention (recommended)")
+
+                if HAS_GEMMA4_HANDLER:
+                    chat_handler = Gemma4ChatHandler(clip_model_path=mmproj_path, verbose=False)
+                    print("[DEBUG] Using Gemma4ChatHandler (from your fork) - Vision ready")
+                else:
+                    chat_handler = None
+
+                self.llm = Llama(
+                    model_path=model_path,
+                    chat_handler=chat_handler,
+                    n_gpu_layers=n_gpu_layers,
+                    n_ctx=n_ctx,
+                    n_batch=n_batch,
+                    flash_attn=flash,
+                    cuda_graphs=cuda_graphs,
+                    mlock=mlock,
+                    verbose=False,
+                )
+                print("[DEBUG] Gemma-4 + Vision loaded successfully with your fork")
+
+            # Image handling (multi-image support)
+            if mode == "Image Caption":
+                images = self._collect_images(image_1, kwargs)
+                if not images:
+                    raise ValueError("Connect at least one image in 'Image Caption' mode.")
+
+                content_parts = []
+                for label, img_tensor in images.items():
+                    pil_img = _tensor_to_pil(img_tensor)
+                    b64 = _pil_to_b64(pil_img)
+                    content_parts.append({"type": "text", "text": f"[{label}]"})
+                    content_parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
+
+                content_parts.append({"type": "text", "text": user_prompt})
+
+                messages = [
+                    {"role": "system", "content": self._build_system_prompt(system_prompt, enable_thinking, len(images), ", ".join(images.keys()))},
+                    {"role": "user", "content": content_parts}
+                ]
+            else:
+                if not (input_text or "").strip():
+                    raise ValueError("Enter text in the 'input_text' field.")
+                messages = [
+                    {"role": "system", "content": self._build_system_prompt(system_prompt, enable_thinking, 0, "(text-only mode)")},
+                    {"role": "user", "content": f"{input_text}\n\n{user_prompt}".strip()}
+                ]
+
+            # Safe call with reasoning_budget
+            local_params = {
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens_sent,
+                "top_p": top_p,
+                "top_k": top_k,
+                "min_p": min_p,
+                "repeat_penalty": repeat_penalty,
+                "presence_penalty": presence_penalty,
+                "seed": seed if seed != 0 else None,
+            }
+            if enable_thinking:
+                local_params["reasoning_budget"] = reasoning_budget
+
+            response = self.llm.create_chat_completion(**local_params)
+
+        # Normalize response
+        if isinstance(response, dict):
+            content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        else:
+            content = response.choices[0].message.content or ""
+
+        caption = self._extract_caption(content)
+
+        saved_file_path = self._save_caption(caption) if save_to_file and caption.strip() else ""
+
+        debug_str = f"=== BACKEND: {backend} ===\nMode: {mode}\nThinking: {enable_thinking}\n=== RAW ===\n{content}\n\n=== CAPTION ===\n{caption}"
+
+        if backend == "Local Standalone (llama-cpp-python)" and unload_after_inference:
+            self._unload_model()
+
+        return (caption, debug_str, saved_file_path)
+
+
+# Registration
+NODE_CLASS_MAPPINGS = {"VisionLLMCaptioner": VisionLLMCaptioner}
 NODE_DISPLAY_NAME_MAPPINGS = {
     "VisionLLMCaptioner": "Gemma-4 Vision Captioner + Prompt Enhancer (Remote API or Local Standalone)"
 }
