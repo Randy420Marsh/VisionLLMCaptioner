@@ -1,1 +1,1 @@
-Nothing should be ignored based on the provided file changes. The modification of 'qwen_remote.py' represents a source code file change, which does not warrant any additions to the .gitignore file.
+Nothing needs to be added to .gitignore since only a README.md file was added, which is a source/config file and not a build artifact, dependency, or temporary file.
