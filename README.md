@@ -190,11 +190,11 @@ The node automatically detects all connected `image_*` inputs:
 **Why these defaults?**  
 Per [Unsloth Gemma-4 docs](https://unsloth.ai/docs/models/gemma-4):
 - Temperature 1.0 for best quality on E4B
-- Penalties at 1.0 to avoid over-penalizing creative/uncensored outputs (your Aggressive variant benefits from this)
+- Penalties at 1.0 to avoid over-penalizing creative/uncensored outputs (with abliterated models)
 - 32K context is responsive starting point
 - Full GPU offload + Flash Attention for E4B Q4_K_M speed/quality
 
-**Quantization Note**: Your Q4_K_M is excellent for speed/memory on E4B (Unsloth recommends Q8_0 for max quality, but Q4_K_M is aggressive and works great with your fork).
+**Quantization Note**: Q4_K_M is excellent for speed/memory on E4B (Unsloth recommends Q8_0 for max quality, but Q4_K_M is aggressive and works great).
 
 ---
 
@@ -273,7 +273,7 @@ pip install --no-cache-dir git+https://github.com/Randy420Marsh/llama-cpp-python
 
 ## Credits & Links
 
-- **Your llama-cpp-python fork**: https://github.com/Randy420Marsh/llama-cpp-python (includes Gemma4ChatHandler)
+- **llama-cpp-python fork**: https://github.com/Randy420Marsh/llama-cpp-python (includes Gemma4ChatHandler)
 - **This node**: https://github.com/Randy420Marsh/VisionLLMCaptioner
 - **Best Gemma-4 settings**: https://unsloth.ai/docs/models/gemma-4
 - **Model source inspiration**: Unsloth Gemma-4 collection (your fine-tuned Aggressive variant)
