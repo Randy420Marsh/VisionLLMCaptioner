@@ -67,17 +67,20 @@ def _tensor_to_pil(tensor) -> Image.Image:
     return img
 
 
-def _make_client(server_url: str):
+def _make_client(server_url: str, max_tokens: int = 8192):
     import httpx
     from openai import OpenAI
     base = server_url.rstrip("/") + "/"
+    # Scale read timeout with token budget: ~0.5s per token as a generous estimate
+    # for slow models, with a floor of 120s and ceiling of 1800s (30 min).
+    read_timeout = min(max(120.0, max_tokens * 0.5), 1800.0)
     return OpenAI(
         base_url=base,
         api_key="lm-studio",
         http_client=httpx.Client(
             base_url=base,
             follow_redirects=True,
-            timeout=httpx.Timeout(300.0, connect=30.0),
+            timeout=httpx.Timeout(read_timeout, connect=30.0),
         ),
     )
 
@@ -502,12 +505,44 @@ class VisionLLMCaptioner:
         # Total token budget = output cap + thinking budget (thinking consumed separately)
         max_tokens_sent = max_tokens + (thinking_budget if enable_thinking else 0)
 
+        # Wrap entire inference in try/finally so the model is always unloaded on error.
+        # Without this, a crash mid-inference leaks GPU memory until ComfyUI restarts.
+        try:
+            return self._run_inference(
+                backend, mode, server_url, model_name, model_path, mmproj_path,
+                n_gpu_layers, n_ctx, n_batch, attention_mode,
+                system_prompt, user_prompt, max_tokens_sent, enable_thinking, thinking_budget,
+                temperature, top_p, top_k, repeat_penalty, presence_penalty, min_p,
+                save_to_file, resolved_seed,
+                image_1, input_text, cuda_graphs, mlock, cpu_mode,
+                **kwargs,
+            )
+        except Exception:
+            # On any error, unload the model to free GPU memory
+            if backend == "Local Standalone (llama-cpp-python)":
+                self._unload_model()
+            raise
+        finally:
+            if backend == "Local Standalone (llama-cpp-python)" and unload_after_inference:
+                self._unload_model()
+
+    def _run_inference(
+        self,
+        backend, mode, server_url, model_name, model_path, mmproj_path,
+        n_gpu_layers, n_ctx, n_batch, attention_mode,
+        system_prompt, user_prompt, max_tokens_sent, enable_thinking, thinking_budget,
+        temperature, top_p, top_k, repeat_penalty, presence_penalty, min_p,
+        save_to_file, resolved_seed,
+        image_1, input_text, cuda_graphs, mlock, cpu_mode,
+        **kwargs,
+    ):
+
         thinking_text = ""
         answer_text = ""
 
         # ── REMOTE API ─────────────────────────────────────────────────────────
         if backend == "Remote API (llama-server)":
-            client = _make_client(server_url)
+            client = _make_client(server_url, max_tokens=max_tokens_sent)
 
             messages = self._build_messages(
                 mode, image_1, kwargs, system_prompt, user_prompt, input_text,
@@ -539,8 +574,35 @@ class VisionLLMCaptioner:
             if extra_body:
                 api_params["extra_body"] = extra_body
 
-            response = client.chat.completions.create(**api_params)
-            msg = response.choices[0].message
+            try:
+                response = client.chat.completions.create(**api_params)
+            except Exception as api_err:
+                err_name = type(api_err).__name__
+                err_msg = str(api_err)
+                # Surface connection / timeout / HTTP errors clearly
+                if "ConnectError" in err_name or "ConnectionError" in err_name:
+                    raise ConnectionError(
+                        f"[VisionLLMCaptioner] Cannot connect to server at {server_url}. "
+                        f"Is the server running? ({err_name}: {err_msg})"
+                    ) from api_err
+                if "Timeout" in err_name or "timed out" in err_msg.lower():
+                    raise TimeoutError(
+                        f"[VisionLLMCaptioner] Request to {server_url} timed out. "
+                        f"The model may need more time for {max_tokens_sent} tokens. "
+                        f"Try reducing max_tokens or thinking_budget. ({err_name})"
+                    ) from api_err
+                raise RuntimeError(
+                    f"[VisionLLMCaptioner] Remote API error: {err_name}: {err_msg}"
+                ) from api_err
+
+            try:
+                msg = response.choices[0].message
+            except (IndexError, AttributeError) as e:
+                raise RuntimeError(
+                    f"[VisionLLMCaptioner] Server returned an empty or invalid response. "
+                    f"Check server logs. ({e})"
+                ) from e
+
             thinking_text = getattr(msg, "reasoning_content", "") or ""
             answer_text = msg.content or ""
             # BUG-2 FIX: if the server embeds <|think|> tags directly in msg.content
@@ -591,21 +653,30 @@ class VisionLLMCaptioner:
 
             print("[VisionLLMCaptioner] Running local inference…")
             try:
-                result = self.llm.create_chat_completion(**local_params)
-            except TypeError as te:
-                if "enable_thinking" in str(te) or "thinking_budget" in str(te):
-                    # FIX: fork doesn't support these kwargs — fall back gracefully.
-                    # Thinking is instead triggered by the <|think|> prefix we injected
-                    # into the message in _build_messages().
-                    print(
-                        f"[VisionLLMCaptioner] Fork doesn't accept enable_thinking/thinking_budget "
-                        f"as kwargs ({te}). Falling back to message-level <|think|> injection."
-                    )
-                    local_params.pop("enable_thinking", None)
-                    local_params.pop("thinking_budget", None)
+                try:
                     result = self.llm.create_chat_completion(**local_params)
-                else:
-                    raise
+                except TypeError as te:
+                    if "enable_thinking" in str(te) or "thinking_budget" in str(te):
+                        # FIX: fork doesn't support these kwargs — fall back gracefully.
+                        # Thinking is instead triggered by the <|think|> prefix we injected
+                        # into the message in _build_messages().
+                        print(
+                            f"[VisionLLMCaptioner] Fork doesn't accept enable_thinking/thinking_budget "
+                            f"as kwargs ({te}). Falling back to message-level <|think|> injection."
+                        )
+                        local_params.pop("enable_thinking", None)
+                        local_params.pop("thinking_budget", None)
+                        result = self.llm.create_chat_completion(**local_params)
+                    else:
+                        raise
+            except Exception as local_err:
+                err_name = type(local_err).__name__
+                if isinstance(local_err, TypeError):
+                    raise  # already handled above; re-raise for non-thinking TypeErrors
+                raise RuntimeError(
+                    f"[VisionLLMCaptioner] Local inference failed: {err_name}: {local_err}. "
+                    f"Check model path, available VRAM, and n_ctx settings."
+                ) from local_err
 
             try:
                 message = result["choices"][0].get("message", {})
@@ -634,9 +705,6 @@ class VisionLLMCaptioner:
             f"=== CAPTION ===\n{caption}\n\n"
             f"=== RAW CONTENT ===\n{answer_text}"
         )
-
-        if backend == "Local Standalone (llama-cpp-python)" and unload_after_inference:
-            self._unload_model()
 
         return (caption, debug_str, saved_file_path)
 
