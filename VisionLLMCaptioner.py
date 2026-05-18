@@ -807,16 +807,16 @@ class VisionLLMCaptioner:
 WEB_DIRECTORY = "./js"
 
 
-def setup_preset_api(server):
-    """Setup preset management API endpoints."""
+def setup_preset_api(routes):
+    """Setup preset management API endpoints on the given RouteDef."""
     from aiohttp import web
 
-    @server.routes.get("/vision_llmcaptioner/presets")
+    @routes.get("/vision_llmcaptioner/presets")
     async def get_presets(request):
         """Get all presets for all modes."""
         return web.json_response(PRESETS)
 
-    @server.routes.post("/vision_llmcaptioner/presets/save")
+    @routes.post("/vision_llmcaptioner/presets/save")
     async def save_preset(request):
         """Save a preset for a specific mode."""
         try:
@@ -841,7 +841,7 @@ def setup_preset_api(server):
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
 
-    @server.routes.delete("/vision_llmcaptioner/presets/delete")
+    @routes.post("/vision_llmcaptioner/presets/delete")
     async def delete_preset(request):
         """Delete a preset for a specific mode."""
         try:
@@ -868,12 +868,20 @@ def setup_preset_api(server):
 
 _preset_api_registered = False
 
-def register_preset_api(server):
-    """Register preset API with ComfyUI server (idempotent)."""
+def register_preset_api(server_module):
+    """Register preset API with ComfyUI server (idempotent).
+
+    Uses PromptServer.instance.routes which is the RouteDef connected
+    to the actual aiohttp router.  The old code used server.routes
+    (module-level), which may be a different RouteTableDef that is
+    never added to the running router — causing 404s on preset API
+    calls and a JSON-parse error in the frontend.
+    """
     global _preset_api_registered
     if _preset_api_registered:
         return
-    setup_preset_api(server)
+    routes = server_module.PromptServer.instance.routes
+    setup_preset_api(routes)
     _preset_api_registered = True
     print("[VisionLLMCaptioner] Preset management API registered")
 
