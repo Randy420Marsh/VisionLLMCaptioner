@@ -1,16 +1,19 @@
-# VisionLLMCaptioner – Gemma-4 Vision Captioner + Prompt Enhancer for ComfyUI
+# VisionLLMCaptioner – Gemma-4 Vision Captioner + Text Transformer for ComfyUI
 
-A powerful ComfyUI node that leverages **Gemma-4** vision capabilities for image captioning and prompt enhancement. Supports both **Remote API (llama-server)** and **Local Standalone (llama-cpp-python)** modes.
+A powerful ComfyUI node that leverages **Gemma-4** vision capabilities for image captioning, prompt enhancement, and text transformation. Supports three operation modes and both **Remote API (llama-server)** and **Local Standalone (llama-cpp-python)** backends.
 
 **Optimized for best defaults from [Unsloth Gemma-4 docs](https://unsloth.ai/docs/models/gemma-4)**  
 Recommended model: **Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf** + **mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf**
 
 ### Features
+- **Three Operation Modes**: Image Caption, Text → Detailed Image Prompt, and Text to Text
+- **Preset System**: Mode-aware presets for quick system prompt switching
 - Dual Backend Support: Switch between Remote API (OpenAI-compatible) and Local Standalone (your custom llama-cpp-python fork)
 - Multi-Image Analysis: Process multiple images simultaneously with labeled references
 - Gemma-4 Vision: Full support for Gemma-4's vision capabilities via Gemma4ChatHandler (from your fork)
 - Thinking Mode: Enable chain-of-thought reasoning with configurable budget (uses `<|think|>` per Unsloth)
 - Prompt Enhancement: Transform simple ideas into detailed, cinematic image generation prompts
+- Text Transformation: Rewrite, summarize, or transform input text based on instructions
 - Memory Efficient: Automatic model unloading and GPU cache management
 - CUDA Optimized: Built for NVIDIA GPUs with Flash Attention and CUDA Graphs support
 
@@ -127,20 +130,77 @@ If this runs without errors, your installation is successful.
 
 ## Usage
 
+### Mode Selection
+
+The node supports three modes:
+
+| Mode | Description | Required Input |
+|------|-------------|----------------|
+| **Image Caption** | Analyze images and generate detailed captions | One or more connected images |
+| **Text → Detailed Image Prompt** | Expand short ideas into detailed image generation prompts | Input text in Prompt Enhance field |
+| **Text to Text** | Transform text based on instructions (rewrite, summarize, translate, etc.) | Input text in Prompt Enhance field |
+
+### Field Labels
+
+The node uses clear, descriptive labels:
+
+- **System Prompt** – Controls how the model behaves (use presets for quick switching)
+- **Prompt** – Your specific instructions for the task
+- **Prompt Enhance** – Input text to be processed (used in text modes)
+
+### Preset System
+
+The node features a **persistent preset system** for quick system prompt switching:
+
+- **Built-in presets**: "Default" preset for each mode (cannot be deleted)
+- **Custom preset**: Select "Custom" to write your own system prompt
+- **User presets**: Save your own custom presets that persist across ComfyUI sessions
+
+**Preset Management Buttons:**
+- **Save Preset** – Saves the current system prompt as a new preset (prompts for a name)
+- **Delete Preset** – Deletes the currently selected preset (except "Custom" and "Default")
+- **Refresh Presets** – Reloads presets from the server (useful if presets.json was edited externally)
+
+Presets are stored in `presets.json` in the node's directory and persist across ComfyUI restarts.
+
+**Important Notes:**
+- "Custom" and "Default" presets cannot be deleted
+- Each mode has its own set of presets (switching modes shows only that mode's presets)
+- Changing modes automatically switches to the "Default" preset for that mode
+
 ### Basic Image Captioning
 
 1. Add the **VisionLLMCaptioner** node to your workflow
 2. Connect an image to the image_1 input
-3. Set **Backend** to Local Standalone (llama-cpp-python) or Remote API (llama-server)
-4. Configure model paths (for local mode) or server URL (for remote mode)
-5. Click "Queue Prompt"
+3. Set **Mode** to "Image Caption"
+4. Set **Backend** to Local Standalone (llama-cpp-python) or Remote API (llama-server)
+5. Choose a **Preset** or edit the **System Prompt** directly
+6. Enter your instructions in the **Prompt** field
+7. Configure model paths (for local mode) or server URL (for remote mode)
+8. Click "Queue Prompt"
 
 ### Text-to-Prompt Enhancement
 
-1. Set **Mode** to Text -> Detailed Image Prompt
-2. Enter your idea in the input_text field (e.g., "cyberpunk girl with neon hair")
-3. Optionally connect reference images for style guidance
-4. The node will expand your idea into a detailed, cinematic prompt
+1. Set **Mode** to "Text → Detailed Image Prompt"
+2. Select a preset or configure the **System Prompt**
+3. Enter your idea in the **Prompt Enhance** field (e.g., "cyberpunk girl with neon hair")
+4. Enter specific instructions in the **Prompt** field
+5. Optionally connect reference images for style guidance
+6. The node will expand your idea into a detailed, cinematic prompt
+
+### Text to Text Transformation
+
+1. Set **Mode** to "Text to Text"
+2. Select a preset or configure the **System Prompt** (e.g., "You are a helpful text editor.")
+3. Enter your source text in the **Prompt Enhance** field
+4. Enter transformation instructions in the **Prompt** field (e.g., "Summarize this in 3 bullet points")
+5. The node will transform your text based on the instructions
+
+**Example Text to Text use cases:**
+- Summarization: "Summarize this text in 2-3 sentences"
+- Rewriting: "Rewrite this in a more formal tone"
+- Translation: "Translate this to Spanish"
+- Formatting: "Format this as a markdown table"
 
 ### Multi-Image Analysis
 
@@ -195,6 +255,52 @@ Per [Unsloth Gemma-4 docs](https://unsloth.ai/docs/models/gemma-4):
 - Full GPU offload + Flash Attention for E4B Q4_K_M speed/quality
 
 **Quantization Note**: Q4_K_M is excellent for speed/memory on E4B (Unsloth recommends Q8_0 for max quality, but Q4_K_M is aggressive and works great).
+
+---
+
+## Adding Custom Presets
+
+You can add custom presets in two ways:
+
+### Method 1: Using the UI (Recommended)
+
+1. Select the desired **Mode**
+2. Edit the **System Prompt** field with your desired content
+3. Click the **Save Preset** button
+4. Enter a name for your preset
+5. The preset is saved and immediately available in the dropdown
+
+### Method 2: Manual Editing (Advanced)
+
+To manually add presets by editing files:
+
+#### 1. Edit `presets.json`
+
+Find the `presets.json` file in the node directory and add your presets:
+
+```json
+{
+  "Image Caption": {
+    "Custom": "",
+    "Default": "...",
+    "Technical Analysis": "Analyze this image from a technical perspective..."
+  },
+  "Text -> Detailed Image Prompt": {
+    "Custom": "",
+    "Default": "...",
+    "Cinematic": "Create a cinematic image generation prompt..."
+  },
+  "Text to Text": {
+    "Custom": "",
+    "Default": "...",
+    "Summarizer": "You are a skilled summarizer..."
+  }
+}
+```
+
+#### 2. Refresh Presets
+
+Click the **Refresh Presets** button in the node UI to reload from the JSON file.
 
 ---
 
@@ -255,19 +361,51 @@ pip install --no-cache-dir git+https://github.com/Randy420Marsh/llama-cpp-python
 **Recommended Settings**:
 - Backend: Local Standalone (llama-cpp-python)
 - Mode: Image Caption
+- Preset: Default (or Custom)
 - model_path: your E4B Q4_K_M path
 - mmproj_path: matching E4B f16
 - temperature: 1.0
 - enable_thinking: True
 - thinking_budget: 8192
-- User Prompt: "Describe the scene in extreme detail, including lighting, composition, mood, and artistic style."
+- Prompt: "Describe the scene in extreme detail, including lighting, composition, mood, and artistic style."
 
 ### Workflow 2: Text-to-Detailed Prompt (Aggressive Creative Mode)
 
-- Mode: Text -> Detailed Image Prompt
-- input_text: "epic fantasy warrior in glowing armor"
+```
+[Primitive String] → [VisionLLMCaptioner] → [Show Text]
+                         ↓
+                    (Prompt Enhance input)
+```
+
+**Settings**:
+- Mode: Text → Detailed Image Prompt
+- Prompt Enhance: "epic fantasy warrior in glowing armor"
+- Prompt: "Expand into a detailed prompt for image generation"
 - temperature: 1.0 (Unsloth default for creativity)
 - repeat_penalty: 1.0
+
+### Workflow 3: Text Summarization
+
+```
+[Primitive String] → [VisionLLMCaptioner] → [Show Text]
+                         ↓
+              (Long text to summarize)
+```
+
+**Settings**:
+- Mode: Text to Text
+- Preset: Default (or Custom with: "You are a skilled summarizer.")
+- Prompt Enhance: [paste your long text here]
+- Prompt: "Summarize this in 3-5 sentences focusing on the main points."
+- enable_thinking: True
+
+### Workflow 4: Text Rewriting
+
+**Settings**:
+- Mode: Text to Text
+- System Prompt: "You are a professional editor specializing in making text more engaging and readable."
+- Prompt Enhance: [your original text]
+- Prompt: "Rewrite this to be more concise while keeping all important information."
 
 ---
 

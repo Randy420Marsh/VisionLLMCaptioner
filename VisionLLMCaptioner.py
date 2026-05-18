@@ -20,6 +20,7 @@ from io import BytesIO
 import re
 import gc
 import os
+import json
 from datetime import datetime
 
 import torch
@@ -89,6 +90,80 @@ DEFAULT_SYSTEM_PROMPT = (
     "Output the final prompt only, no explanations."
 )
 
+# Default built-in presets (cannot be deleted)
+DEFAULT_PRESETS = {
+    "Image Caption": {
+        "Custom": "",
+        "Default": DEFAULT_SYSTEM_PROMPT,
+    },
+    "Text -> Detailed Image Prompt": {
+        "Custom": "",
+        "Default": (
+            "You are a master prompt engineer specializing in detailed, "
+            "photorealistic image generation prompts. "
+            "Expand the input into a comprehensive, detailed prompt."
+        ),
+    },
+    "Text to Text": {
+        "Custom": "",
+        "Default": (
+            "You are a helpful text assistant. Process and transform the input text "
+            "according to the user's instructions."
+        ),
+    },
+}
+
+# Presets file path
+def _get_presets_file_path():
+    """Get the path to the presets JSON file."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_dir, "presets.json")
+
+# Load presets from file or use defaults
+PRESETS = None
+
+def _load_presets():
+    """Load presets from JSON file, falling back to defaults."""
+    global PRESETS
+    presets_file = _get_presets_file_path()
+    if os.path.exists(presets_file):
+        try:
+            with open(presets_file, 'r', encoding='utf-8') as f:
+                loaded = json.load(f)
+                # Merge with defaults to ensure all modes exist
+                result = {mode: dict(presets) for mode, presets in DEFAULT_PRESETS.items()}
+                for mode, presets in loaded.items():
+                    if mode in result:
+                        # Merge, but keep default presets intact
+                        result[mode].update(presets)
+                    else:
+                        result[mode] = presets
+                PRESETS = result
+                print(f"[VisionLLMCaptioner] Loaded presets from {presets_file}")
+        except Exception as e:
+            print(f"[VisionLLMCaptioner] Error loading presets: {e}, using defaults")
+            PRESETS = {mode: dict(presets) for mode, presets in DEFAULT_PRESETS.items()}
+    else:
+        PRESETS = {mode: dict(presets) for mode, presets in DEFAULT_PRESETS.items()}
+        _save_presets()
+    return PRESETS
+
+def _save_presets():
+    """Save current presets to JSON file."""
+    global PRESETS
+    presets_file = _get_presets_file_path()
+    try:
+        with open(presets_file, 'w', encoding='utf-8') as f:
+            json.dump(PRESETS, f, indent=2, ensure_ascii=False)
+        print(f"[VisionLLMCaptioner] Saved presets to {presets_file}")
+        return True
+    except Exception as e:
+        print(f"[VisionLLMCaptioner] Error saving presets: {e}")
+        return False
+
+# Initialize presets on import
+_load_presets()
+
 
 class VisionLLMCaptioner:
 
@@ -101,8 +176,12 @@ class VisionLLMCaptioner:
                     {"default": "Remote API (llama-server)"},
                 ),
                 "mode": (
-                    ["Image Caption", "Text -> Detailed Image Prompt"],
+                    ["Image Caption", "Text -> Detailed Image Prompt", "Text to Text"],
                     {"default": "Image Caption"},
+                ),
+                "preset": (
+                    ["Custom", "Default"],
+                    {"default": "Default"},
                 ),
                 "server_url":   ("STRING", {"default": "http://127.0.0.1:8080/v1", "multiline": False}),
                 "model_name":   ("STRING", {"default": "gemma-4-E4B-it-abliterated.i1-Q4_K_M.gguf", "multiline": False}),
@@ -115,8 +194,8 @@ class VisionLLMCaptioner:
                     ["Flash Attention (recommended)", "Standard Attention"],
                     {"default": "Flash Attention (recommended)"},
                 ),
-                "system_prompt": ("STRING", {"default": DEFAULT_SYSTEM_PROMPT, "multiline": True}),
-                "user_prompt":   ("STRING", {"default": "Describe the scene in extreme detail.", "multiline": True}),
+                "system_prompt": ("STRING", {"default": DEFAULT_SYSTEM_PROMPT, "multiline": True, "label": "System Prompt"}),
+                "user_prompt":   ("STRING", {"default": "Describe the scene in extreme detail.", "multiline": True, "label": "Prompt"}),
                 "max_tokens":    ("INT",    {"default": 8192, "min": 64, "max": 32768, "step": 64}),
                 "enable_thinking": (
                     "BOOLEAN",
@@ -146,6 +225,7 @@ class VisionLLMCaptioner:
                         "default": "",
                         "multiline": True,
                         "placeholder": "Short idea → e.g. 'cyberpunk girl with neon hair'",
+                        "label": "Prompt Enhance",
                     },
                 ),
                 # FIX: seed default changed to -1; -1 means "random" (no seed).
@@ -398,7 +478,7 @@ class VisionLLMCaptioner:
 
     def generate(
         self,
-        backend, mode, server_url, model_name, model_path, mmproj_path,
+        backend, mode, preset, server_url, model_name, model_path, mmproj_path,
         n_gpu_layers, n_ctx, n_batch, attention_mode,
         system_prompt, user_prompt, max_tokens, enable_thinking, thinking_budget,
         temperature, top_p, top_k, repeat_penalty, presence_penalty, min_p,
@@ -407,7 +487,14 @@ class VisionLLMCaptioner:
         cuda_graphs=False, mlock=True, cpu_mode=False,
         **kwargs,
     ):
-        print(f"[VisionLLMCaptioner] START — Backend: {backend} | Mode: {mode} | Thinking: {enable_thinking}")
+        print(f"[VisionLLMCaptioner] START — Backend: {backend} | Mode: {mode} | Preset: {preset} | Thinking: {enable_thinking}")
+
+        # Apply preset if not Custom
+        if preset != "Custom" and mode in PRESETS and preset in PRESETS[mode]:
+            preset_value = PRESETS[mode][preset]
+            if preset_value:
+                system_prompt = preset_value
+                print(f"[VisionLLMCaptioner] Applied preset '{preset}' for mode '{mode}'")
 
         # FIX: seed=-1 means "no seed"; 0 is now a valid reproducible seed
         resolved_seed = None if seed < 0 else seed
@@ -618,6 +705,88 @@ class VisionLLMCaptioner:
             messages.append({"role": "assistant", "content": "<|think|>"})
 
         return messages
+
+
+# -------------------------------------------------------------------------
+# Preset Management API Endpoints
+# -------------------------------------------------------------------------
+
+WEB_DIRECTORY = "./js"
+
+
+def setup_preset_api(server):
+    """Setup preset management API endpoints."""
+    from aiohttp import web
+
+    @server.routes.get("/vision_llmcaptioner/presets")
+    async def get_presets(request):
+        """Get all presets for all modes."""
+        return web.json_response(PRESETS)
+
+    @server.routes.post("/vision_llmcaptioner/presets/save")
+    async def save_preset(request):
+        """Save a preset for a specific mode."""
+        try:
+            data = await request.json()
+            mode = data.get("mode")
+            name = data.get("name")
+            prompt = data.get("prompt")
+
+            if not mode or not name:
+                return web.json_response({"error": "mode and name are required"}, status=400)
+
+            if mode not in PRESETS:
+                PRESETS[mode] = {}
+
+            # Don't allow overwriting "Custom"
+            if name == "Custom":
+                return web.json_response({"error": "Cannot overwrite 'Custom' preset"}, status=400)
+
+            PRESETS[mode][name] = prompt
+            _save_presets()
+            return web.json_response({"success": True, "mode": mode, "name": name})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    @server.routes.delete("/vision_llmcaptioner/presets/delete")
+    async def delete_preset(request):
+        """Delete a preset for a specific mode."""
+        try:
+            data = await request.json()
+            mode = data.get("mode")
+            name = data.get("name")
+
+            if not mode or not name:
+                return web.json_response({"error": "mode and name are required"}, status=400)
+
+            # Don't allow deleting default presets
+            if mode in DEFAULT_PRESETS and name in DEFAULT_PRESETS[mode]:
+                return web.json_response({"error": "Cannot delete default preset"}, status=400)
+
+            if mode in PRESETS and name in PRESETS[mode]:
+                del PRESETS[mode][name]
+                _save_presets()
+                return web.json_response({"success": True, "mode": mode, "name": name})
+            else:
+                return web.json_response({"error": "Preset not found"}, status=404)
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+
+def register_preset_api(server):
+    """Register preset API with ComfyUI server."""
+    setup_preset_api(server)
+    print("[VisionLLMCaptioner] Preset management API registered")
+
+
+# Check if we're in ComfyUI and register the API
+if COMFYUI_AVAILABLE:
+    try:
+        import server
+        register_preset_api(server)
+    except (ImportError, AttributeError):
+        # If not available at import time, will be registered later via __init__.py
+        pass
 
 
 # Registration

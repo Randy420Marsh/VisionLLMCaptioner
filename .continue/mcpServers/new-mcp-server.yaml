@@ -1,0 +1,16 @@
+name: Devin + DeepWiki MCPs
+version: 0.0.1
+schema: v1
+
+mcpServers:
+  - name: Devin
+    type: streamable-http
+    url: https://mcp.devin.ai/mcp
+    requestOptions:
+     headers:
+        Authorization: Bearer apk_user_dXNlci03MzZlZjgyMjIyMzE0NzhlYjhhNTY0MGI0MTUwODk2OV9vcmctN2MzNDVjNGY5ODU0NDMzYzg2M2VjNzIxMzk0M2ZmNDM6ZWY5ODkzODk5MjljNDdmNmJhNzJiODRmYTMxNDNhMGY=
+        X-Org-Id: org-7c345c4f9854433c863ec7213943ff43
+
+  - name: DeepWiki
+    type: streamable-http
+    url: https://mcp.deepwiki.com/mcp
