@@ -206,7 +206,7 @@ class VisionLLMCaptioner:
                 "top_p":            ("FLOAT", {"default": 0.95, "min": 0.0,  "max": 1.0, "step": 0.05}),
                 "top_k":            ("INT",   {"default": 64,   "min": 1,    "max": 200}),
                 "repeat_penalty":   ("FLOAT", {"default": 1.0,  "min": 0.9,  "max": 2.0, "step": 0.05}),
-                "presence_penalty": ("FLOAT", {"default": 0.0,  "min": -2.0, "max": 2.0, "step": 0.05}),
+                "presence_penalty": ("FLOAT", {"default": 1.0,  "min": -2.0, "max": 2.0, "step": 0.05}),
                 "min_p":            ("FLOAT", {"default": 0.05, "min": 0.0,  "max": 1.0, "step": 0.01}),
                 "unload_after_inference": (
                     "BOOLEAN",
