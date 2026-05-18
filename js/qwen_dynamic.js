@@ -6,7 +6,7 @@ import { app } from "../../scripts/app.js";
 
 console.log("[VisionLLMCaptioner] JS extension loading…");
 
-const TARGETS = ["VisionLLMCaptioner", "Qwen35RemoteCaptioner"];
+const TARGETS = ["VisionLLMCaptioner"];
 
 // Default presets (fallback if API unavailable)
 const DEFAULT_PRESETS = {

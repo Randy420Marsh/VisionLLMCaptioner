@@ -308,7 +308,7 @@ class VisionLLMCaptioner:
         if not content or not content.strip():
             return "[EMPTY RESPONSE]"
         content = re.sub(
-            r"<\|?channel\|?>.*?<\|?channel\|?>", "", content, flags=re.DOTALL | re.IGNORECASE
+            r"<\|?/?channel\|?>.*?<\|?/?channel\|?>", "", content, flags=re.DOTALL | re.IGNORECASE
         )
         return content.strip()
 
@@ -689,13 +689,38 @@ class VisionLLMCaptioner:
         else:
             if not (input_text or "").strip():
                 raise ValueError("Enter text in the 'input_text' field for Text mode.")
-            messages = [
-                {
-                    "role": "system",
-                    "content": self._build_system_prompt(system_prompt, 0, "(text-only mode)"),
-                },
-                {"role": "user", "content": f"{input_text}\n\n{user_prompt}".strip()},
-            ]
+
+            # Collect any connected reference images (used in "Text -> Detailed Image Prompt")
+            ref_images = self._collect_images(image_1, kwargs)
+
+            if ref_images and mode == "Text -> Detailed Image Prompt":
+                content_parts = []
+                for label, img_tensor in ref_images.items():
+                    pil_img = _tensor_to_pil(img_tensor)
+                    b64 = _pil_to_b64(pil_img)
+                    content_parts.append({"type": "text", "text": f"[{label}]"})
+                    content_parts.append(
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
+                    )
+                content_parts.append({"type": "text", "text": f"{input_text}\n\n{user_prompt}".strip()})
+
+                messages = [
+                    {
+                        "role": "system",
+                        "content": self._build_system_prompt(
+                            system_prompt, len(ref_images), ", ".join(ref_images.keys())
+                        ),
+                    },
+                    {"role": "user", "content": content_parts},
+                ]
+            else:
+                messages = [
+                    {
+                        "role": "system",
+                        "content": self._build_system_prompt(system_prompt, 0, "(text-only mode)"),
+                    },
+                    {"role": "user", "content": f"{input_text}\n\n{user_prompt}".strip()},
+                ]
 
         # NOTE-6 FIX: only inject the <|think|> assistant-prefill stub for local inference.
         # llama-server already honours reasoning_budget in extra_body to trigger thinking.
@@ -773,20 +798,16 @@ def setup_preset_api(server):
             return web.json_response({"error": str(e)}, status=500)
 
 
+_preset_api_registered = False
+
 def register_preset_api(server):
-    """Register preset API with ComfyUI server."""
+    """Register preset API with ComfyUI server (idempotent)."""
+    global _preset_api_registered
+    if _preset_api_registered:
+        return
     setup_preset_api(server)
+    _preset_api_registered = True
     print("[VisionLLMCaptioner] Preset management API registered")
-
-
-# Check if we're in ComfyUI and register the API
-if COMFYUI_AVAILABLE:
-    try:
-        import server
-        register_preset_api(server)
-    except (ImportError, AttributeError):
-        # If not available at import time, will be registered later via __init__.py
-        pass
 
 
 # Registration
