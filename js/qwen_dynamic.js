@@ -43,15 +43,27 @@ let PRESETS = JSON.parse(JSON.stringify(DEFAULT_PRESETS));
 // API base URL
 const API_BASE = "/vision_llmcaptioner";
 
+// Parse a response as JSON, with a fallback for non-JSON bodies (e.g. 404 pages).
+async function parseJSONResponse(response) {
+    const text = await response.text();
+    try {
+        return JSON.parse(text);
+    } catch {
+        return { error: `Server returned non-JSON (HTTP ${response.status}): ${text.slice(0, 200)}` };
+    }
+}
+
 // Load presets from API
 async function loadPresetsFromAPI() {
     try {
         const response = await fetch(`${API_BASE}/presets`);
         if (response.ok) {
-            const data = await response.json();
-            PRESETS = data;
-            console.log("[VisionLLMCaptioner] Loaded presets from API:", Object.keys(PRESETS));
-            return true;
+            const data = await parseJSONResponse(response);
+            if (!data.error) {
+                PRESETS = data;
+                console.log("[VisionLLMCaptioner] Loaded presets from API:", Object.keys(PRESETS));
+                return true;
+            }
         }
     } catch (e) {
         console.log("[VisionLLMCaptioner] Could not load presets from API, using defaults:", e.message);
@@ -67,7 +79,7 @@ async function savePresetToAPI(mode, name, prompt) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ mode, name, prompt }),
         });
-        const data = await response.json();
+        const data = await parseJSONResponse(response);
         if (response.ok) {
             console.log("[VisionLLMCaptioner] Saved preset:", data);
             return true;
@@ -87,11 +99,11 @@ async function savePresetToAPI(mode, name, prompt) {
 async function deletePresetFromAPI(mode, name) {
     try {
         const response = await fetch(`${API_BASE}/presets/delete`, {
-            method: "DELETE",
+            method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ mode, name }),
         });
-        const data = await response.json();
+        const data = await parseJSONResponse(response);
         if (response.ok) {
             console.log("[VisionLLMCaptioner] Deleted preset:", data);
             return true;
