@@ -171,6 +171,26 @@ _load_presets()
 class VisionLLMCaptioner:
 
     @classmethod
+    def _get_preset_names(cls):
+        """Collect all unique preset names across all modes from the loaded PRESETS.
+
+        Called by INPUT_TYPES so ComfyUI's validation accepts saved presets.
+        Re-reads presets from disk each time so newly saved presets are
+        recognised without restarting ComfyUI.
+        """
+        _load_presets()
+        names = set()
+        if PRESETS:
+            for mode_presets in PRESETS.values():
+                names.update(mode_presets.keys())
+        # Ensure Custom and Default are always first
+        ordered = ["Custom", "Default"]
+        for n in sorted(names):
+            if n not in ordered:
+                ordered.append(n)
+        return ordered
+
+    @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
@@ -183,7 +203,7 @@ class VisionLLMCaptioner:
                     {"default": "Image Caption"},
                 ),
                 "preset": (
-                    ["Custom", "Default"],
+                    cls._get_preset_names(),
                     {"default": "Default"},
                 ),
                 "server_url":   ("STRING", {"default": "http://127.0.0.1:8080/v1", "multiline": False}),
